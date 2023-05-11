@@ -17,10 +17,11 @@ assert (
 ), "LLaMA is now in HuggingFace's main branch.\nPlease reinstall it: pip uninstall transformers && pip install git+https://github.com/huggingface/transformers.git"
 from transformers import LlamaTokenizer, LlamaForCausalLM
 
-parser = argparse.ArgumentParser(description="Load and save the ALPACA-LORA model.")
+parser = argparse.ArgumentParser(description="Load and save the LORA model.")
 parser.add_argument("--weights", type=str, choices=["7B", "13B", "30B"], required=True, help="Select the weights for the model (7B, 13B, or 30B).")
 parser.add_argument("--base", type=str, required=True)
-parser.add_argument("--lora", type=str, required=True)
+parser.add_argument("--lora", type=str, required=False)
+parser.add_argument("--name", type=str, default="ALPACA")
 args = parser.parse_args()
 
 params_map = {
@@ -63,6 +64,7 @@ params = params_map[args.weights]
 base_model = args.base
 lora_adapter = args.lora
 
+
 tokenizer = LlamaTokenizer.from_pretrained(base_model)
 
 base_model = LlamaForCausalLM.from_pretrained(
@@ -72,21 +74,25 @@ base_model = LlamaForCausalLM.from_pretrained(
     device_map={"": "cpu"},
 )
 
-lora_model = PeftModel.from_pretrained(
-    base_model,
-    lora_adapter,
-    device_map={"": "cpu"},
-    torch_dtype=torch.float16,
-)
+if lora_adapter is not None:
 
-# merge weights
-for layer in lora_model.base_model.model.model.layers:
-    layer.self_attn.q_proj.merge_weights = True
-    layer.self_attn.v_proj.merge_weights = True
+    lora_model = PeftModel.from_pretrained(
+        base_model,
+        lora_adapter,
+        device_map={"": "cpu"},
+        torch_dtype=torch.float16,
+    )
 
-lora_model.train(False)
+    # merge weights
+    for layer in lora_model.base_model.model.model.layers:
+        layer.self_attn.q_proj.merge_weights = True
+        layer.self_attn.v_proj.merge_weights = True
 
-lora_model_sd = lora_model.state_dict()
+    lora_model.train(False)
+
+    lora_model_sd = lora_model.state_dict()
+else:
+    lora_model_sd = base_model.state_dict()
 
 n_layers = params["n_layers"]
 n_heads = params["n_heads"]
@@ -161,15 +167,16 @@ def save_model(new_state_dict, params, save_path):
     with open(f"{save_path}/params.json", "w") as f:
         json.dump(params, f)
 
-save_path = f"models/ALPACA-LORA-{args.weights}"
-os.makedirs(f"models/ALPACA-LORA-{args.weights}", exist_ok=True)
+save_path = f"models/{args.name}-LORA-{args.weights}" if lora_adapter is not None else f"models/{args.weights}"
+os.makedirs(save_path, exist_ok=True)
 
+time.sleep(.2)
 print("Saving model...")
 monitor_thread = threading.Thread(target=monitor_file_size, args=(f"{save_path}/consolidated.00.pth", stop_event))
 monitor_thread.start()
 
-torch.save(new_state_dict, f"models/ALPACA-LORA-{args.weights}/consolidated.00.pth")
+torch.save(new_state_dict, f"{save_path}/consolidated.00.pth")
 stop_event.set()
 monitor_thread.join()
-with open(f"models/ALPACA-LORA-{args.weights}/params.json", "w") as f:
+with open(f"{save_path}/params.json", "w") as f:
     json.dump(params, f)
