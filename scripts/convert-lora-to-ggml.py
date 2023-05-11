@@ -52,7 +52,7 @@ def write_file_header(fout: BufferedWriter, params: Mapping[str, Any], no_cache:
     fout.write(b"ggla"[::-1])  # magic (ggml lora)
     fout.write(struct.pack("I", 1))  # file version
     fout.write(struct.pack("?", 0 if no_cache else 1))  # cache is enabled or not
-    fout.write(struct.pack("II", params["r"], params["lora_alpha"]))
+    fout.write(struct.pack("II", params["r"], int(params["lora_alpha"])))
 
 
 def write_tensor_header(
